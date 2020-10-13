@@ -28,11 +28,60 @@ def mov_duckiebot(key):
 
 def det_duckie(obs):
     ### DETECTOR HECHO EN LA MISIÓN ANTERIOR
+    lower_yellow = np.array([15, 200, 130])
+    upper_yellow = np.array([40, 255, 255])
+    min_area = 3600
+    ### CÓDIGO DE DETECCIÓN POR COLOR ###
+
+    #Transformar imagen a espacio HSV
+    img = cv2.cvtColor(obs,cv2.COLOR_RGB2HSV)
+
+    # Filtrar colores de la imagen en el rango utilizando
+    mask = cv2.inRange(img, lower_yellow, upper_yellow)
+
+    # Bitwise-AND entre máscara (mask) y original (obs) para visualizar lo filtrado
+    segment_image = cv2.bitwise_and(obs, obs, mask= mask)
+ 
+
+    # Se define kernel para operaciones morfológicas
+    kernel = np.ones((5,5),np.uint8)
+
+    # Aplicar operaciones morfológicas para eliminar ruido
+    # Esto corresponde a hacer un Opening
+    # https://docs.opencv.org/trunk/d9/d61/tutorial_py_morphological_ops.html
+    #Operacion morfologica erode
+    img_out = cv2.erode(mask, kernel, iterations = 3) 
+    #Operacion morfologica dilate
+    img_out = cv2.dilate(mask, kernel, iterations = 2)
+
+    # Busca contornos de blobs
+    # https://docs.opencv.org/trunk/d3/d05/tutorial_py_table_of_contents_contours.html
+    contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Iterar sobre contornos y dibujar bounding box de los patos
+    for cnt in contours:
+            # Obtener rectangulo que bordea un contorno
+            x,y,w,h = cv2.boundingRect(cnt)
+            #Filtrar por area minima
+            if w*h > min_area: # DEFINIR AREA
+                x2 = x + w
+                y2 = y + h
+                #Dibujar rectangulo en el frame original
+                cv2.rectangle(obs,(int(x),int(y)),(int(x2),int(y2)),(0, 255,0),2)
+
+    # Se muestra en una ventana llamada "patos" la observación del simulador
+    # con los bounding boxes dibujados
+    cv2.imshow('patos', cv2.cvtColor(obs, cv2.COLOR_RGB2BGR))
+    # Se muestra en una ventana llamada "filtrado" la imagen filtrada
+    cv2.imshow('filtrado', cv2.cvtColor(segment_image, cv2.COLOR_RGB2BGR))
+
+
+    
     dets = list()
 
     for cnt in contours:
-
-        if AREA > min_area:
+       x,y,w,h = cv2.boundingRect(cnt)
+       if cv2.contourArea(cnt) > min_area:
             # En lugar de dibujar, se agrega a la lista
             dets.append((x,y,w,h))
 
@@ -81,7 +130,7 @@ if __name__ == '__main__':
     duck_pos = np.array([2,0,2])
 
     # Constante que se debe calcular
-    C = 1 # f * dr (f es constante, dr es conocido)
+    C = 60.0 # f * dr (f es constante, dr es conocido)
 
     while True:
 
@@ -96,30 +145,30 @@ if __name__ == '__main__':
 
         # Si hay alerta evitar que el Duckiebot avance
         if alert:
-            pass
+            action[0] = np.min([0.0,action[0]])
 
         # Se ejecuta la acción definida anteriormente y se retorna la observación (obs),
         # la evaluación (reward), etc
         obs, reward, done, info = env.step(action)
 
         # Detección de patos, retorna lista de detecciones
-
+        dets = det_duckie(obs)
         # Dibuja las detecciones
-
+        obs = draw_dets(obs, dets)
         # Obtener posición del duckiebot
         dbot_pos = env.cur_pos
         # Calcular distancia real entre posición del duckiebot y pato
         # esta distancia se utiliza para calcular la constante
-        dist = CALCULAR
+        dist = np.sqrt(np.sum((duck_pos - env.cur_pos)**2))
 
         # La alerta se desactiva (opción por defecto)
         alert = False
         
         for d in dets:
             # Alto de la detección en pixeles
-            p = DEFINIR
+            p = d[3]
             # La aproximación se calcula según la fórmula mostrada en la capacitación
-            d_aprox = DEFINIR
+            d_aprox = C/d[3]
 
             # Muestra información relevante
             print('p:', p)
@@ -129,9 +178,9 @@ if __name__ == '__main__':
             # Si la distancia es muy pequeña activa alerta
             if d_aprox < 0.3:
                 # Activar alarma
-
+                alert = True
                 # Muestra ventana en rojo
-
+                obs = red_alert(obs)
         # Se muestra en una ventana llamada "patos" la observación del simulador
         cv2.imshow('patos', cv2.cvtColor(obs, cv2.COLOR_RGB2BGR))
 
